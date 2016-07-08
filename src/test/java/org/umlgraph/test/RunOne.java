@@ -36,7 +36,7 @@ public class RunOne {
             outFolder.mkdirs();
 	
 //        runView("gr.spinellis.views.ViewChildEmpty");
-        runSingleClass("TestHiddenOp");
+        runSingleClass("TestHideOp");
     }
     
     public static void runView(String viewClass)  {

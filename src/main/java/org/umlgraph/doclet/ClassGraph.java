@@ -26,15 +26,19 @@ import java.io.OutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
+import com.sun.javadoc.AnnotationDesc;
 import com.sun.javadoc.ClassDoc;
 import com.sun.javadoc.ConstructorDoc;
 import com.sun.javadoc.Doc;
@@ -49,6 +53,8 @@ import com.sun.javadoc.Tag;
 import com.sun.javadoc.Type;
 import com.sun.javadoc.TypeVariable;
 import com.sun.javadoc.WildcardType;
+import com.sun.tools.javac.tree.JCTree;
+import com.sun.tools.javadoc.ProgramElementDocImpl;
 
 /**
  * Class graph generation engine
@@ -69,6 +75,7 @@ class ClassGraph {
 	LEFT, CENTER, RIGHT
     };
     public static Map<RelationType, String> associationMap = new HashMap<RelationType, String>();
+    private static Set<String> typeSimple;
     static {
 	associationMap.put(RelationType.ASSOC, "arrowhead=none");
 	associationMap.put(RelationType.NAVASSOC, "arrowhead=open");
@@ -77,6 +84,25 @@ class ClassGraph {
 	associationMap.put(RelationType.COMPOSED, "arrowhead=none, arrowtail=diamond, dir=both");
 	associationMap.put(RelationType.NAVCOMPOSED, "arrowhead=open, arrowtail=diamond, dir=both");
 	associationMap.put(RelationType.DEPEND, "arrowhead=open, style=dashed");
+	typeSimple = new HashSet<String>();
+	typeSimple.add(boolean.class.getName());
+	typeSimple.add(Boolean.class.getName());
+	typeSimple.add(short.class.getName());
+	typeSimple.add(Short.class.getName());
+	typeSimple.add(int.class.getName());
+	typeSimple.add(Integer.class.getName());
+	typeSimple.add(long.class.getName());
+	typeSimple.add(Long.class.getName());
+	typeSimple.add(float.class.getName());
+	typeSimple.add(Float.class.getName());
+	typeSimple.add(double.class.getName());
+	typeSimple.add(Double.class.getName());
+	typeSimple.add(String.class.getName());
+	typeSimple.add(Date.class.getName());
+	typeSimple.add(void.class.getName());
+	typeSimple.add(UUID.class.getName());
+	typeSimple.add(Character.class.getName());
+	typeSimple.add(char.class.getName());
     }
     protected Map<String, ClassInfo> classnames = new HashMap<String, ClassInfo>();
     protected Set<String> rootClasses;
@@ -301,19 +327,34 @@ class ClassGraph {
     }
 
     /** Print the class's attributes fd */
-    private void attributes(Options opt, FieldDoc fd[]) {
-	for (FieldDoc f : fd) {
-	    if (hidden(f))
-		continue;
-	    String att;
-	    stereotype(opt, f, Align.LEFT);
-	    att = visibility(opt, f) + f.name();
-	    if (opt.showType)
-		att += typeAnnotation(opt, f.type());
-	    tableLine(Align.LEFT, att);
-	    tagvalue(opt, f);
+    private boolean attributes(Options opt, FieldDoc fd[], boolean simple) {
+    	boolean noAttribute = true;
+		for (FieldDoc f : fd) {
+			if (hidden(f))
+				continue;
+			FieldRelationInfo fi = getFieldRelationInfo(f);
+			if((typeSimple.contains(f.type().qualifiedTypeName()) || fi == null) && simple){//type simple
+				String att;
+				stereotype(opt, f, Align.LEFT);
+				att = visibility(opt, f) + f.name();
+				if (opt.showType)
+					att += typeAnnotation(opt, f.type());
+				tableLine(Align.LEFT, att);
+				tagvalue(opt, f);
+				noAttribute = false;
+			}else if(!typeSimple.contains(f.type().qualifiedTypeName()) && fi != null && !simple){
+				RelationType relation = getRelation(f);
+				ClassDoc from = f.containingClass();
+				String fromName = from.name();
+				ClassDoc to = fi.cd;
+				String toName = to.name();
+				String headLabel = fi.multiple ? "*" : "0..1";
+				relation(opt, relation, from, to, "", f.name(), headLabel);
+				noAttribute = false;
+			}
+		}
+		return noAttribute;
 	}
-    }
 
     /*
      * The following two methods look similar, but can't
@@ -321,7 +362,44 @@ class ClassGraph {
      * ExecutableMemberDoc, doesn't support returnType for ctors.
      */
 
-    /** Print the class's constructors m */
+    private RelationType getRelation(FieldDoc f) {
+    	for(AnnotationDesc annotation : f.annotations()){
+			if(annotation.annotationType().name().contains("Relation")){
+				try{
+					Field[] fields = ProgramElementDocImpl.class.getDeclaredFields();
+					Field treeField = null;
+					for(Field field : fields){
+						if("tree".equals(field.getName())){
+							treeField = field;
+							treeField.setAccessible(true);
+							JCTree tree = (JCTree)treeField.get(f);
+							String tString = tree.toString();
+							String[] lines = tString.split(System.lineSeparator());
+							for(String line : lines){
+								if(line.contains("Relation")){
+									if(line.contains("COMPOSITION"))
+										return RelationType.NAVCOMPOSED;
+									else if(line.contains("AGGREGATION"))
+										return RelationType.NAVHAS;
+									else
+										return RelationType.NAVASSOC;
+										
+								}
+							}
+							break;
+						}
+					}
+				}catch (Exception e){
+					return RelationType.NAVASSOC;
+				}
+			}
+		}
+		return RelationType.NAVASSOC;
+	}
+
+
+
+	/** Print the class's constructors m */
     private boolean operations(Options opt, ConstructorDoc m[]) {
 	boolean printed = false;
 	for (ConstructorDoc cd : m) {
@@ -534,10 +612,8 @@ class ClassGraph {
 		    innerTableStart();
 		    FieldDoc[] fields = c.fields();
 		    // if there are no fields, print an empty line to generate proper HTML
-		    if (fields.length == 0)
+		    if (attributes(opt, c.fields(), true))
 			tableLine(Align.LEFT, "");
-		    else
-			attributes(opt, c.fields());
 		    innerTableEnd();
 		} else if(!c.isEnum() && (opt.showConstructors || opt.showOperations)) {
 		    // show an emtpy box if we don't show attributes but
@@ -755,6 +831,7 @@ class ClassGraph {
 	    }
 	}
 	// Print other associations
+	attributes(opt, c.fields(), false);
 	allRelation(opt, RelationType.ASSOC, c);
 	allRelation(opt, RelationType.NAVASSOC, c);
 	allRelation(opt, RelationType.HAS, c);
@@ -968,7 +1045,7 @@ class ClassGraph {
 	}
 	
 	Options opt = optionProvider.getOptionsFor(type.asClassDoc());
-	if (opt.matchesCollPackageExpression(type.qualifiedTypeName())) {
+	//if (opt.matchesCollPackageExpression(type.qualifiedTypeName())) {
 	    Type[] argTypes = getInterfaceTypeArguments(collectionClassDoc, type);
 	    if (argTypes != null && argTypes.length == 1 && !argTypes[0].isPrimitive())
 		return new FieldRelationInfo(argTypes[0].asClassDoc(), true);
@@ -976,7 +1053,7 @@ class ClassGraph {
 	    argTypes = getInterfaceTypeArguments(mapClassDoc, type);
 	    if (argTypes != null && argTypes.length == 2 && !argTypes[1].isPrimitive())
 		return new FieldRelationInfo(argTypes[1].asClassDoc(), true);
-	}
+	//
 
 	return new FieldRelationInfo(type.asClassDoc(), false);
     }

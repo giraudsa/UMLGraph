@@ -103,6 +103,24 @@ class ClassGraph {
 	typeSimple.add(UUID.class.getName());
 	typeSimple.add(Character.class.getName());
 	typeSimple.add(char.class.getName());
+	typeSimple.add(boolean.class.getSimpleName());
+	typeSimple.add(Boolean.class.getSimpleName());
+	typeSimple.add(short.class.getSimpleName());
+	typeSimple.add(Short.class.getSimpleName());
+	typeSimple.add(int.class.getSimpleName());
+	typeSimple.add(Integer.class.getSimpleName());
+	typeSimple.add(long.class.getSimpleName());
+	typeSimple.add(Long.class.getSimpleName());
+	typeSimple.add(float.class.getSimpleName());
+	typeSimple.add(Float.class.getSimpleName());
+	typeSimple.add(double.class.getSimpleName());
+	typeSimple.add(Double.class.getSimpleName());
+	typeSimple.add(String.class.getSimpleName());
+	typeSimple.add(Date.class.getSimpleName());
+	typeSimple.add(void.class.getSimpleName());
+	typeSimple.add(UUID.class.getSimpleName());
+	typeSimple.add(Character.class.getSimpleName());
+	typeSimple.add(char.class.getSimpleName());
     }
     protected Map<String, ClassInfo> classnames = new HashMap<String, ClassInfo>();
     protected Set<String> rootClasses;
@@ -291,7 +309,9 @@ class ClassGraph {
     /** Print a a basic type t */
     private String type(Options opt, Type t) {
 	String type;
-	if (opt.showQualified)
+	if(typeSimple.contains(t.qualifiedTypeName()))
+		type = t.typeName();
+	else if (opt.showQualified)
 	    type = t.qualifiedTypeName();
 	else
 	    type = t.typeName();
@@ -1037,8 +1057,18 @@ class ClassGraph {
 
     private FieldRelationInfo getFieldRelationInfo(FieldDoc field) {
 	Type type = field.type();
-	if(type.isPrimitive() || type instanceof WildcardType || type instanceof TypeVariable)
+	if(type.isPrimitive()){
+		System.out.println(type.qualifiedTypeName() + " est un type primitif et vient de " + field.qualifiedName());
 	    return null;
+	} 
+	if(type instanceof WildcardType){
+		System.out.println(type.qualifiedTypeName() + " est un type wildcard");
+	    return null;
+	}
+	if(type instanceof TypeVariable){
+		System.out.println(type.qualifiedTypeName() + " est un type typevariable");
+	    return null;
+	}
 	
 	if (type.dimension().endsWith("[]")) {
 	    return new FieldRelationInfo(type.asClassDoc(), true);
